@@ -12,11 +12,12 @@ import {
   Layers,
   ChevronDown,
   CloudSun,
+  Eye,
 } from 'lucide-react';
 import { FarmState, SoilType, IrrigationType, validateCoordinates, Coordinates } from '../../types/farm';
 import { NasaPowerNormalizedPayload } from '../../types/nasaPower';
 import { fetchNasaPowerWeather, validateDateRange } from '../../services/nasaPower';
-import { executeRotationComparison } from '../../services/rotationEngine';
+import { executeRotationComparison, isWeatherBoundToCoordinates } from '../../services/rotationEngine';
 import { downloadReportAsJson } from '../../services/exportReport';
 import { MapPointPicker } from '../map/MapPointPicker';
 import {
@@ -71,7 +72,7 @@ export const SimpleView: React.FC<SimpleViewProps> = ({
   const [weatherError, setWeatherError] = useState<string | null>(null);
   const [weatherPreset, setWeatherPreset] = useState<'year' | 'week'>('year');
 
-  // Observations state (stored on farmState.observations or fallback to local)
+  // Observations state
   const currentObservations = farmState.observations || [];
 
   // Coordinate validation
@@ -83,6 +84,20 @@ export const SimpleView: React.FC<SimpleViewProps> = ({
   // Rotation comparison result
   const comparison = executeRotationComparison(farmState, nasaData);
   const { sufficiency, feasibleAlternatives, disqualifiedCandidates } = comparison;
+
+  // Strict eligibility determination:
+  // Recommendations are only eligible if coordinates are valid, geographically supported,
+  // sufficiency status is not 'insufficient_evidence', and at least one previous crop is chosen.
+  const isGeographicallySupported = coordVal.isValid && sufficiency.isGeographicallyApplicable && sufficiency.status !== 'insufficient_evidence';
+  const hasPreviousCrop = farmState.cropRotationList.length > 0;
+  const areRecommendationsEligible = isGeographicallySupported && hasPreviousCrop;
+
+  // Weather query coordinate binding check
+  const isWeatherBound = isWeatherBoundToCoordinates(
+    nasaData,
+    farmState.coordinates.latitude,
+    farmState.coordinates.longitude
+  );
 
   // ─────────────────────────────────────────────────────────────
   // Action Handlers
@@ -168,16 +183,24 @@ export const SimpleView: React.FC<SimpleViewProps> = ({
     downloadReportAsJson(comparison, farmState, nasaData);
   };
 
-  // Check if weather data is stale relative to current coordinates
-  const isWeatherStale =
-    nasaData !== null &&
-    coordVal.isValid &&
-    (coordVal.parsedLat !== nasaData.metadata.requestedCoordinates.latitude ||
-      coordVal.parsedLon !== nasaData.metadata.requestedCoordinates.longitude);
+  // Observation labels and icons for visual summary chips
+  const observationMap: Record<string, { label: string; icon: string }> = {
+    yellowing: { label: 'Yellowing leaves', icon: '🍃' },
+    wilting: { label: 'Wilting / dry', icon: '🥀' },
+    leaf_spots: { label: 'Leaf spots', icon: '🍂' },
+    standing_water: { label: 'Standing water', icon: '💧' },
+    stunted: { label: 'Stunted growth', icon: '🌱' },
+    healthy: { label: 'Healthy crop', icon: '🌿' },
+    unknown: { label: 'No symptoms noted', icon: '❓' },
+  };
+
+  const selectedObservationItems = currentObservations
+    .map((k) => ({ key: k, ...(observationMap[k] || { label: k, icon: '🔍' }) }))
+    .filter((item) => item.key !== 'unknown');
 
   return (
     <div className="space-y-8 pb-12">
-      {/* Top Welcome & Mode Notice */}
+      {/* Top Welcome & Mode Switch Banner */}
       <div className="bg-forest-900 text-white p-6 sm:p-8 rounded-3xl border-2 border-forest-950 shadow-md">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2">
@@ -190,7 +213,7 @@ export const SimpleView: React.FC<SimpleViewProps> = ({
               Visual Farm Tools
             </h2>
             <p className="text-base sm:text-lg text-forest-100 max-w-2xl leading-relaxed">
-              Touch the picture choices below to describe your field, note what you see, inspect real past weather from NASA, and review feasible crop sequences.
+              Touch the picture choices below to describe your field, record visual notes, inspect past satellite weather, and review feasible crop sequences.
             </p>
           </div>
 
@@ -206,6 +229,122 @@ export const SimpleView: React.FC<SimpleViewProps> = ({
           )}
         </div>
       </div>
+
+      {/* ─────────────────────────────────────────────────────────────
+          VISUAL SUMMARY: YOUR FIELD AT A GLANCE
+          ───────────────────────────────────────────────────────────── */}
+      <section
+        id="card-field-summary"
+        aria-label="Field summary at a glance"
+        className="bg-sand-50 border-3 border-forest-800 rounded-3xl p-5 sm:p-6 shadow-sm space-y-4"
+      >
+        <div className="flex items-center justify-between border-b border-sand-300 pb-3">
+          <div className="flex items-center gap-2.5">
+            <Eye className="w-5 h-5 text-forest-800" aria-hidden="true" />
+            <h3 className="text-lg sm:text-xl font-extrabold text-charcoal-900">
+              Your Field at a Glance
+            </h3>
+          </div>
+          <span className="text-xs font-bold uppercase tracking-wider bg-sand-200 text-charcoal-700 px-2.5 py-1 rounded-full">
+            Status Summary
+          </span>
+        </div>
+
+        {/* Status Grid */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+          {/* Location Chip */}
+          <div className="p-3 bg-white rounded-xl border border-sand-300 space-y-1">
+            <div className="text-xs font-bold uppercase text-charcoal-500">Location</div>
+            <div className="font-bold text-charcoal-900 truncate">
+              {coordVal.isValid
+                ? `${farmState.coordinates.latitude}°, ${farmState.coordinates.longitude}°`
+                : 'Not set yet'}
+            </div>
+            <div className="text-xs text-charcoal-600">
+              {coordVal.isValid
+                ? sufficiency.isGeographicallyApplicable
+                  ? '✓ In Evidence Band'
+                  : '⚠️ Outside Scope'
+                : 'Enter in Tool 1'}
+            </div>
+          </div>
+
+          {/* Water Chip */}
+          <div className="p-3 bg-white rounded-xl border border-sand-300 space-y-1">
+            <div className="text-xs font-bold uppercase text-charcoal-500">Water Source</div>
+            <div className="font-bold text-charcoal-900 capitalize">
+              {farmState.irrigationType === 'rainfed'
+                ? 'Rain only'
+                : farmState.irrigationType === 'unknown'
+                ? 'Not sure'
+                : farmState.irrigationType}
+            </div>
+            <div className="text-xs text-charcoal-600">
+              {farmState.irrigationType === 'rainfed' ? 'Rainfed production' : 'Irrigation available'}
+            </div>
+          </div>
+
+          {/* Soil Chip */}
+          <div className="p-3 bg-white rounded-xl border border-sand-300 space-y-1">
+            <div className="text-xs font-bold uppercase text-charcoal-500">Soil Texture</div>
+            <div className="font-bold text-charcoal-900 capitalize">
+              {farmState.soilType === 'unknown' ? 'Not sure' : farmState.soilType}
+            </div>
+            <div className="text-xs text-charcoal-600">
+              {farmState.soilType === 'clay' ? 'Heavy / low drainage' : 'Standard drainage'}
+            </div>
+          </div>
+
+          {/* Weather Chip */}
+          <div className="p-3 bg-white rounded-xl border border-sand-300 space-y-1">
+            <div className="text-xs font-bold uppercase text-charcoal-500">Weather History</div>
+            <div className="font-bold text-charcoal-900 truncate">
+              {nasaData
+                ? isWeatherBound
+                  ? `${nasaData.records.length} days loaded`
+                  : '⚠️ Coords Mismatched'
+                : 'None loaded'}
+            </div>
+            <div className="text-xs text-charcoal-600">
+              {nasaData && isWeatherBound
+                ? `${nasaData.summary.precipSum ?? 0} mm rain recorded`
+                : 'Load in Tool 3'}
+            </div>
+          </div>
+        </div>
+
+        {/* Farmer Observations Badges */}
+        <div className="pt-2 border-t border-sand-300">
+          <div className="text-xs font-bold uppercase text-charcoal-600 mb-2 flex items-center justify-between">
+            <span>Visual Observations Recorded (Personal Scouting Notes):</span>
+            <span className="text-[11px] font-normal lowercase text-charcoal-500">*not agronomic diagnoses</span>
+          </div>
+
+          {selectedObservationItems.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {selectedObservationItems.map((obs) => (
+                <span
+                  key={obs.key}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-100 border border-amber-300 text-amber-950 rounded-full text-xs font-bold"
+                >
+                  <span aria-hidden="true">{obs.icon}</span>
+                  <span>{obs.label}</span>
+                </span>
+              ))}
+              {currentObservations.includes('healthy') && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-100 border border-emerald-300 text-emerald-950 rounded-full text-xs font-bold">
+                  <span aria-hidden="true">🌿</span>
+                  <span>Healthy crop growth</span>
+                </span>
+              )}
+            </div>
+          ) : (
+            <div className="text-xs text-charcoal-600 italic">
+              No symptoms noted yet. Touch picture choices in Tool 2 (What I See) to record field observations.
+            </div>
+          )}
+        </div>
+      </section>
 
       {/* ─────────────────────────────────────────────────────────────
           TOOL CARD 1: MY FIELD
@@ -545,12 +684,12 @@ export const SimpleView: React.FC<SimpleViewProps> = ({
               What I See
             </h3>
             <p className="text-base sm:text-lg text-charcoal-700 mt-0.5">
-              Look at your crops and soil. Touch picture choices to record what you notice.
+              Look at your crops and soil. Touch picture choices to record visual field notes.
             </p>
           </div>
         </div>
 
-        {/* Mandatory Agronomic Boundary Notice */}
+        {/* Agronomic Boundary Notice */}
         <div className="p-4 bg-amber-50 border-2 border-amber-400 rounded-2xl flex items-start gap-3.5 text-amber-950">
           <AlertTriangle className="w-6 h-6 text-amber-800 shrink-0 mt-0.5" aria-hidden="true" />
           <div className="space-y-1 text-sm sm:text-base leading-relaxed">
@@ -790,7 +929,7 @@ export const SimpleView: React.FC<SimpleViewProps> = ({
               <strong>Best Practices for Field Scouting:</strong> Walk a representative W-shaped path across your field rather than checking only the edges. Examine at least 10 random plants.
             </p>
             <p>
-              <strong>When to seek professional diagnosis:</strong> If symptoms spread rapidly across more than 15% of the field, contact your local university extension office or certified crop advisor immediately.
+              <strong>When to seek professional diagnosis:</strong> If symptoms spread rapidly or threaten crop establishment, contact your local university extension office or certified crop advisor immediately.
             </p>
           </div>
         </details>
@@ -875,14 +1014,17 @@ export const SimpleView: React.FC<SimpleViewProps> = ({
           </div>
         </div>
 
-        {/* Stale warning if coordinates changed */}
-        {isWeatherStale && (
-          <div className="p-3.5 bg-amber-100 border-2 border-amber-400 rounded-2xl text-amber-950 flex items-center justify-between gap-3 text-sm">
-            <div className="flex items-center gap-2 font-bold">
-              <AlertTriangle className="w-5 h-5 text-amber-800 shrink-0" aria-hidden="true" />
-              <span>
-                Coordinates changed since weather was loaded! Click &quot;Load 1-Year History&quot; to refresh.
-              </span>
+        {/* Warning if coordinates changed or mismatched */}
+        {nasaData && !isWeatherBound && (
+          <div className="p-4 bg-amber-100 border-2 border-amber-500 rounded-2xl text-amber-950 flex items-start gap-3 text-sm">
+            <AlertTriangle className="w-5 h-5 text-amber-800 shrink-0 mt-0.5" aria-hidden="true" />
+            <div className="space-y-1">
+              <div className="font-bold text-amber-900">
+                Weather Data Mismatched With Field Location
+              </div>
+              <p>
+                Loaded weather history was requested for coordinates ({nasaData.metadata.requestedCoordinates.latitude}°, {nasaData.metadata.requestedCoordinates.longitude}°), but your field is currently set to ({farmState.coordinates.latitude}°, {farmState.coordinates.longitude}°). Weather observations cannot be applied until you reload weather for this location.
+              </p>
             </div>
           </div>
         )}
@@ -907,10 +1049,10 @@ export const SimpleView: React.FC<SimpleViewProps> = ({
                 <AlertTriangle className="w-5 h-5 text-amber-800 shrink-0 mt-0.5" aria-hidden="true" />
                 <div>
                   <div className="font-bold text-amber-900">
-                    Short Observation Window ({nasaData.records.length} days)
+                    {`Short Observation Window (${nasaData.records.length} days)`}
                   </div>
                   <p>
-                    This data covers {nasaData.metadata.requestedStartDate} to {nasaData.metadata.requestedEndDate}. <strong>A 7-day or short period is NOT full agricultural evidence</strong> and does not reflect a full annual growing season.
+                    {`This data covers ${nasaData.metadata.requestedStartDate} to ${nasaData.metadata.requestedEndDate}. `}<strong>A 7-day or short period is NOT full agricultural evidence</strong> and does not reflect a full annual growing season.
                   </p>
                 </div>
               </div>
@@ -921,7 +1063,7 @@ export const SimpleView: React.FC<SimpleViewProps> = ({
               <div className="flex items-center gap-2 font-bold text-charcoal-900">
                 <Calendar className="w-4 h-4 text-forest-800" aria-hidden="true" />
                 <span>
-                  Observed Dates: {nasaData.metadata.requestedStartDate} to {nasaData.metadata.requestedEndDate} ({nasaData.records.length} days)
+                  {`Observed Dates: ${nasaData.metadata.requestedStartDate} to ${nasaData.metadata.requestedEndDate} (${nasaData.records.length} days)`}
                 </span>
               </div>
               <div className="text-xs text-charcoal-500 font-mono">
@@ -1221,8 +1363,21 @@ export const SimpleView: React.FC<SimpleViewProps> = ({
             Agronomic Rotation Evaluation
           </div>
 
-          {/* Scope check: If outside latitude band */}
-          {sufficiency.status === 'insufficient_evidence' && (
+          {/* CRITICAL CHECK 1: If coordinates missing or invalid */}
+          {!coordVal.isValid && (
+            <div className="p-5 bg-sand-100 border-2 border-charcoal-400 rounded-2xl space-y-2 text-charcoal-900">
+              <div className="font-bold text-base flex items-center gap-2 text-charcoal-900">
+                <AlertTriangle className="w-5 h-5 text-amber-700 shrink-0" aria-hidden="true" />
+                <span>Field Location Required</span>
+              </div>
+              <p className="text-sm leading-relaxed text-charcoal-700">
+                Please enter valid field coordinates or choose &quot;Use Demo Field&quot; in <strong>Tool 1 (My Field)</strong> before crop recommendations can be evaluated. Universal Farm never fabricates recommendations without a field location.
+              </p>
+            </div>
+          )}
+
+          {/* CRITICAL CHECK 2: If outside Evidence Pack 1 geographic scope */}
+          {coordVal.isValid && (!sufficiency.isGeographicallyApplicable || sufficiency.status === 'insufficient_evidence') && (
             <div className="p-5 bg-amber-50 border-2 border-amber-400 rounded-2xl space-y-2 text-amber-950">
               <div className="font-bold text-base flex items-center gap-2 text-amber-900">
                 <AlertTriangle className="w-5 h-5 text-amber-800 shrink-0" aria-hidden="true" />
@@ -1234,51 +1389,82 @@ export const SimpleView: React.FC<SimpleViewProps> = ({
             </div>
           )}
 
-          {/* Feasible Next Crops Cards */}
-          <div className="space-y-3">
-            <div className="text-sm font-bold uppercase tracking-wider text-charcoal-600">
-              Feasible Next Crop Candidates:
+          {/* CRITICAL CHECK 3: If location is valid and in scope, but no previous crop selected */}
+          {isGeographicallySupported && !hasPreviousCrop && (
+            <div className="p-5 bg-sand-100 border-2 border-forest-600 rounded-2xl space-y-2 text-charcoal-900">
+              <div className="font-bold text-base flex items-center gap-2 text-forest-900">
+                <Info className="w-5 h-5 text-forest-800 shrink-0" aria-hidden="true" />
+                <span>Select Previous Crop Above</span>
+              </div>
+              <p className="text-sm leading-relaxed text-charcoal-700">
+                Touch one of the crop picture choices above to select what grew last season in this field. Feasible rotation candidates and disease-break alternatives will be evaluated once your previous crop is selected.
+              </p>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-              {/* Feasible Card: Chickpea */}
-              <div className="p-4 bg-emerald-50/80 border-2 border-emerald-600 rounded-2xl space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="font-extrabold text-lg text-emerald-950 flex items-center gap-2">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-700 shrink-0" aria-hidden="true" />
-                    <span>Chickpea (Pulse)</span>
-                  </div>
-                  <span className="text-xs font-bold bg-emerald-800 text-white px-2.5 py-1 rounded-full uppercase tracking-wider">
-                    FEASIBLE
-                  </span>
+          )}
+
+          {/* ONLY DISPLAY FEASIBLE CANDIDATES WHEN STRICTLY ELIGIBLE */}
+          {areRecommendationsEligible && (
+            <>
+              {/* Feasible Next Crops Cards */}
+              <div className="space-y-3">
+                <div className="text-sm font-bold uppercase tracking-wider text-charcoal-600">
+                  Feasible Next Crop Candidates:
                 </div>
-                <p className="text-sm text-emerald-950 leading-relaxed">
-                  Excellent rotation break after cereals. Fixes atmospheric nitrogen and breaks cereal fungal root disease cycles.
-                </p>
-                <div className="text-xs text-emerald-900 font-medium">
-                  Indicative Water Demand: ~350–500 mm · Soil: Well-drained loams/sands
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  {/* Feasible Card: Chickpea */}
+                  <div className="p-4 bg-emerald-50/80 border-2 border-emerald-600 rounded-2xl space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="font-extrabold text-lg text-emerald-950 flex items-center gap-2">
+                        <CheckCircle2 className="w-5 h-5 text-emerald-700 shrink-0" aria-hidden="true" />
+                        <span>Chickpea (Pulse)</span>
+                      </div>
+                      <span className="text-xs font-bold bg-emerald-800 text-white px-2.5 py-1 rounded-full uppercase tracking-wider">
+                        FEASIBLE NEXT CROP
+                      </span>
+                    </div>
+                    <p className="text-sm text-emerald-950 leading-relaxed">
+                      Excellent rotation break after cereals. Fixes atmospheric nitrogen and breaks cereal fungal root disease cycles.
+                    </p>
+                    <div className="text-xs text-emerald-900 font-medium">
+                      Indicative Water Demand: ~350–500 mm · Soil: Well-drained loams/sands
+                    </div>
+                  </div>
+
+                  {/* Feasible Card: Canola */}
+                  <div className="p-4 bg-emerald-50/80 border-2 border-emerald-600 rounded-2xl space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="font-extrabold text-lg text-emerald-950 flex items-center gap-2">
+                        <CheckCircle2 className="w-5 h-5 text-emerald-700 shrink-0" aria-hidden="true" />
+                        <span>Canola (Oilseed)</span>
+                      </div>
+                      <span className="text-xs font-bold bg-emerald-800 text-white px-2.5 py-1 rounded-full uppercase tracking-wider">
+                        FEASIBLE NEXT CROP
+                      </span>
+                    </div>
+                    <p className="text-sm text-emerald-950 leading-relaxed">
+                      Deep taproot conditions subsoil and breaks cereal root diseases. High market oil value.
+                    </p>
+                    <div className="text-xs text-emerald-900 font-medium">
+                      Indicative Water Demand: ~400–600 mm · Soil: Loam to clay loam
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* Feasible Card: Canola */}
-              <div className="p-4 bg-emerald-50/80 border-2 border-emerald-600 rounded-2xl space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="font-extrabold text-lg text-emerald-950 flex items-center gap-2">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-700 shrink-0" aria-hidden="true" />
-                    <span>Canola (Oilseed)</span>
+              {/* Monoculture Cereal Warning if repeated cereal selected */}
+              {(farmState.cropRotationList.includes('Bread Wheat') || farmState.cropRotationList.includes('Feed Barley')) && (
+                <div className="p-4 bg-amber-50 border-2 border-amber-300 rounded-2xl text-amber-950 text-sm space-y-1">
+                  <div className="font-bold text-amber-900 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-800 shrink-0" aria-hidden="true" />
+                    <span>Cereal Repetition Caution:</span>
                   </div>
-                  <span className="text-xs font-bold bg-emerald-800 text-white px-2.5 py-1 rounded-full uppercase tracking-wider">
-                    FEASIBLE
-                  </span>
+                  <p>
+                    Growing another cereal immediately after {farmState.cropRotationList[0]} elevates the risk of Take-all fungus (<em>Gaeumannomyces graminis</em>) and crown rot. Alternating with broadleaf crops (Chickpea or Canola) breaks disease carryover.
+                  </p>
                 </div>
-                <p className="text-sm text-emerald-950 leading-relaxed">
-                  Deep taproot conditions subsoil and breaks cereal root diseases. High market oil value.
-                </p>
-                <div className="text-xs text-emerald-900 font-medium">
-                  Indicative Water Demand: ~400–600 mm · Soil: Loam to clay loam
-                </div>
-              </div>
-            </div>
-          </div>
+              )}
+            </>
+          )}
 
           {/* Disqualified or Caution Candidates */}
           {disqualifiedCandidates.length > 0 && (
@@ -1311,8 +1497,8 @@ export const SimpleView: React.FC<SimpleViewProps> = ({
             </div>
           )}
 
-          {/* Multi-Year Feasible Rotation Alternatives */}
-          {feasibleAlternatives.length > 0 && (
+          {/* Multi-Year Feasible Rotation Alternatives (Only when eligible) */}
+          {areRecommendationsEligible && feasibleAlternatives.length > 0 && (
             <div className="space-y-3 pt-2">
               <div className="text-sm font-bold uppercase tracking-wider text-charcoal-600">
                 Recommended Multi-Year Sequences:

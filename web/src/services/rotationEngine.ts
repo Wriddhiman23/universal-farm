@@ -81,6 +81,23 @@ export interface RotationComparisonResult {
 }
 
 /**
+ * Verifies whether loaded NASA weather data matches current farm coordinates within ±0.05°.
+ */
+export function isWeatherBoundToCoordinates(
+  weatherData: NasaPowerNormalizedPayload | null,
+  latitudeStr: string,
+  longitudeStr: string
+): boolean {
+  if (!weatherData) return false;
+  const coordVal = validateCoordinates(latitudeStr, longitudeStr);
+  if (!coordVal.isValid || coordVal.parsedLat === null || coordVal.parsedLon === null) return false;
+
+  const latDiff = Math.abs(weatherData.metadata.requestedCoordinates.latitude - coordVal.parsedLat);
+  const lonDiff = Math.abs(weatherData.metadata.requestedCoordinates.longitude - coordVal.parsedLon);
+  return latDiff < 0.05 && lonDiff < 0.05;
+}
+
+/**
  * Evaluates whether input coordinates, weather data, and management context
  * are sufficient to support agronomic rotation comparison under Evidence Pack 1.
  */
@@ -149,6 +166,26 @@ export function assessInputSufficiency(
     identifiedGaps.push(
       'Live NASA POWER weather data not yet loaded. Comparisons will use published regional literature baselines instead of location-specific historical observations.'
     );
+  } else {
+    // Check weather query coordinate binding
+    const isBound = isWeatherBoundToCoordinates(
+      weatherData,
+      farmState.coordinates.latitude,
+      farmState.coordinates.longitude
+    );
+    if (!isBound) {
+      identifiedGaps.push(
+        `Loaded weather history was requested for coordinates (${weatherData.metadata.requestedCoordinates.latitude}°, ${weatherData.metadata.requestedCoordinates.longitude}°), which do not match current field coordinates (${lat.toFixed(2)}°, ${lon.toFixed(2)}°). Weather observations cannot be applied to this field.`
+      );
+    }
+
+    // Check short-period weather limitation (< 365 days)
+    const isAnnual = weatherData.records.length >= 365 || weatherData.summary.daysTotal >= 365;
+    if (!isAnnual) {
+      identifiedGaps.push(
+        `Loaded weather covers only a short ${weatherData.records.length}-day period (${weatherData.metadata.requestedStartDate} to ${weatherData.metadata.requestedEndDate}). A short observation window is not sufficient evidence of annual rainfall.`
+      );
+    }
   }
 
   if (farmState.cropRotationList.length === 0) {
@@ -210,16 +247,17 @@ export function evaluateBaseline(
     }
 
     let waterWarning: string | null = null;
-    if (matched && isRainfed && waterDemand && waterDemand > 500) {
-      const days = weatherData?.summary.daysTotal || weatherData?.records.length || 365;
-      const annualPrecip =
-        weatherData?.summary.precipSum !== null && weatherData?.summary.precipSum !== undefined
-          ? days >= 300
-            ? weatherData.summary.precipSum
-            : weatherData.summary.precipSum * (365 / Math.max(days, 1))
-          : 400;
-      if (annualPrecip < 400) {
-        waterWarning = `High seasonal water requirement (~${waterDemand} mm) under rainfed conditions in an area with observed low historical rainfall (~${Math.round(annualPrecip)} mm/yr).`;
+    if (matched && isRainfed && waterDemand) {
+      const isBound = isWeatherBoundToCoordinates(
+        weatherData,
+        farmState.coordinates.latitude,
+        farmState.coordinates.longitude
+      );
+      const isAnnual = Boolean(isBound && weatherData && (weatherData.records.length >= 365 || weatherData.summary.daysTotal >= 365));
+      const annualPrecip = isAnnual && weatherData ? weatherData.summary.precipSum : null;
+
+      if (annualPrecip !== null && waterDemand > annualPrecip) {
+        waterWarning = `High seasonal water requirement (~${waterDemand} mm) under rainfed conditions exceeds verified annual rainfall (${Math.round(annualPrecip)} mm/yr) (FAO Drainage Paper 33).`;
       }
     }
 
@@ -327,22 +365,24 @@ export function generateFeasibleAlternatives(
 ): { alternatives: EvaluatedRotationPlan[]; disqualified: DisqualifiedPlan[] } {
   const isRainfed = farmState.irrigationType === 'rainfed';
   const soil = farmState.soilType;
-  const days = weatherData?.summary.daysTotal || weatherData?.records.length || 365;
-  const annualRainfallEst =
-    weatherData?.summary.precipSum !== null && weatherData?.summary.precipSum !== undefined
-      ? days >= 300
-        ? weatherData.summary.precipSum
-        : weatherData.summary.precipSum * (365 / Math.max(days, 1))
-      : 420;
+
+  // Only use verified bound weather data with full annual coverage (>= 365 days)
+  const isBound = isWeatherBoundToCoordinates(
+    weatherData,
+    farmState.coordinates.latitude,
+    farmState.coordinates.longitude
+  );
+  const isAnnual = Boolean(isBound && weatherData && (weatherData.records.length >= 365 || weatherData.summary.daysTotal >= 365));
+  const annualRainfallEst = isAnnual && weatherData ? weatherData.summary.precipSum : null;
 
   const disqualified: DisqualifiedPlan[] = [];
 
-  // HARD CONSTRAINT CHECK 1: Check if Grain Sorghum can be grown in rainfed conditions with low summer moisture
-  if (isRainfed && annualRainfallEst < 350) {
+  // HARD CONSTRAINT CHECK 1: Sorghum under rainfed conditions with confirmed annual rainfall < 350 mm
+  if (isRainfed && annualRainfallEst !== null && annualRainfallEst < 350) {
     disqualified.push({
       candidateTitle: 'Summer Sorghum Rotation Sequence',
       attemptedCrops: ['Bread Wheat', 'Grain Sorghum', 'Feed Barley'],
-      reason: `Estimated annual rainfall (${Math.round(annualRainfallEst)} mm) is below the minimum water demand for Grain Sorghum (350-550 mm) under strictly rainfed conditions.`,
+      reason: `Verified annual rainfall (${Math.round(annualRainfallEst)} mm) is below the minimum water demand for Grain Sorghum (350-550 mm) under strictly rainfed conditions.`,
       disqualifyingRule: 'Rainfed Moisture Deficit Hard Constraint (FAO Irrigation & Drainage Paper 33)',
       citation: 'Doorenbos & Kassam (1979). FAO Irrigation and Drainage Paper No. 33: Yield response to water.',
     });
@@ -556,11 +596,15 @@ export function executeRotationComparison(
 
   const baselinePlan = evaluateBaseline(farmState, hemisphere, weatherData);
 
-  const { alternatives, disqualified } = generateFeasibleAlternatives(
-    farmState,
-    hemisphere,
-    weatherData
-  );
+  // Recommendations are ONLY eligible when geographic scope is supported AND coordinates are valid
+  const isEligible = sufficiency.isGeographicallyApplicable && sufficiency.status !== 'insufficient_evidence';
+
+  // Also require at least one crop entered to generate comparative alternatives
+  const hasCropInput = farmState.cropRotationList.length > 0;
+
+  const { alternatives, disqualified } = isEligible && hasCropInput
+    ? generateFeasibleAlternatives(farmState, hemisphere, weatherData)
+    : { alternatives: [], disqualified: [] };
 
   return {
     sufficiency,

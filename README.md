@@ -47,18 +47,18 @@ All automated quality checks have been executed and passed:
 
 | Gate | Command | Actual Result |
 | :--- | :--- | :--- |
-| **Unit & Integration Tests** | `npm run test` | **PASSED** (63 tests passed across 9 test suites in non-watch mode via Vitest) |
-| **Live NASA API Integration** | `src/test/nasaPowerLive.integration.test.ts` | **PASSED** (Real live network call to `power.larc.nasa.gov` verified in 1180ms) |
+| **Unit & Integration Tests** | `npm run test` | **PASSED** (67 tests passed across 9 test suites in non-watch mode via Vitest) |
+| **Live NASA API Integration** | `src/test/nasaPowerLive.integration.test.ts` | **PASSED** (Real live network call to `power.larc.nasa.gov` verified in 6366ms) |
 | **Linting** | `npm run lint` | **PASSED** (0 errors, 0 warnings across all files via ESLint 9 + TypeScript-ESLint) |
-| **Production Build** | `npm run build` | **PASSED** (Vite v6 production bundle built successfully in `web/dist/` in 5.88s) |
+| **Production Build** | `npm run build` | **PASSED** (Vite v6 production bundle built successfully in `web/dist/` in 4.08s) |
 | **Browser Layout Checks** | MCP Browser Tools | **NOT RUN** (Browser DevTools MCP tools not available in this environment; verify manually via browser) |
 
-### Test Suites Breakdown (63 tests total):
-- `simpleView.test.ts` (7 tests): Verifies 4 large tool cards (My Field, What I See, Past Weather, My Crop Plan), touch targets >= 48px, "Not sure" options, non-diagnosis observation boundaries, weather safeguards (non-forecast warning, short-period warning, period rainfall distinction), and deterministic crop rotation feasibility.
+### Test Suites Breakdown (67 tests total):
+- `simpleView.test.ts` (10 tests): Real rendered component regression tests verifying 4 large tool cards (My Field, What I See, Past Weather, My Crop Plan), strict recommendation eligibility withholding FEASIBLE crops on blank/unsupported inputs, geographic scope boundary enforcement, previous crop prompts, cereal repetition warnings, hard constraint disqualifications, weather query coordinate mismatch warnings, short observation window distinctions, visual summary card with scouting badges, and touch targets >= 48px with "Not sure" options.
 - `cropCatalogue.test.ts` (4 tests): Verifies 7 crops, parameter bounds, literature citations, component evidence vs mixture assumptions, and fuzzy name matching.
-- `rotationEngine.test.ts` (17 tests): Verifies sufficiency checks, baseline evaluation without substitution, botanical family repetition warnings, candidate generation, hard constraints (sorghum moisture deficit, pea clay sensitivity), calendar-backed schedule generation across both hemispheres, honest gap reporting for unmapped crops, and deterministic reproducibility.
+- `rotationEngine.test.ts` (17 tests): Verifies sufficiency checks, weather query binding, baseline evaluation without substitution, botanical family repetition warnings, candidate generation, hard constraints (sorghum moisture deficit, pea clay sensitivity), calendar-backed schedule generation across both hemispheres, honest gap reporting for unmapped crops, and deterministic reproducibility.
 - `nasaPowerMultiYear.test.ts` (3 tests): Verifies annual chunk aggregation, driest/wettest year calculation, frost/heat stress counts, and in-memory caching.
-- `exportReport.test.ts` (2 tests): Verifies authentic report payload structure, farm inputs preservation, and literature disclaimers.
+- `exportReport.test.ts` (3 tests): Verifies authentic report payload structure, farm inputs preservation, weather query binding flag, and strict isolation of short-period precipitation from annual rainfall estimates.
 - `coordinateValidation.test.ts` (9 tests): Global coordinate validation, negative/zero coordinate handling, and boundary error messages.
 - `farmState.test.ts` (5 tests): State persistence, priority selection, and form resets.
 - `nasaPowerService.test.ts` (15 tests): URLSearchParams building, -999 sentinel parsing, rate limiting, and network drop recovery.

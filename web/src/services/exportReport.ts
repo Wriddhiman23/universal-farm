@@ -1,4 +1,4 @@
-import { RotationComparisonResult } from './rotationEngine';
+import { RotationComparisonResult, isWeatherBoundToCoordinates } from './rotationEngine';
 import { FarmState } from '../types/farm';
 import { NasaPowerNormalizedPayload } from '../types/nasaPower';
 
@@ -31,7 +31,10 @@ export interface ExportPayload {
     period: string | null;
     timeStandard: string;
     recordsCount: number;
+    periodPrecipitationTotalMm: number | null;
     annualPrecipitationEstimateMm: number | null;
+    isAnnualObservation: boolean;
+    isWeatherBoundToCoordinates: boolean;
   };
   comparisonResults: {
     sufficiencyStatus: string;
@@ -94,7 +97,17 @@ export function buildExportPayload(
       period: weatherData ? `${weatherData.metadata.requestedStartDate} to ${weatherData.metadata.requestedEndDate}` : null,
       timeStandard: weatherData ? weatherData.metadata.timeStandard : 'N/A',
       recordsCount: weatherData ? weatherData.records.length : 0,
-      annualPrecipitationEstimateMm: weatherData?.summary.precipSum ?? null,
+      periodPrecipitationTotalMm: weatherData?.summary.precipSum ?? null,
+      annualPrecipitationEstimateMm:
+        weatherData && (weatherData.records.length >= 365 || weatherData.summary.daysTotal >= 365)
+          ? weatherData.summary.precipSum
+          : null,
+      isAnnualObservation: Boolean(
+        weatherData && (weatherData.records.length >= 365 || weatherData.summary.daysTotal >= 365)
+      ),
+      isWeatherBoundToCoordinates: Boolean(
+        weatherData && isWeatherBoundToCoordinates(weatherData, farmState.coordinates.latitude, farmState.coordinates.longitude)
+      ),
     },
     comparisonResults: {
       sufficiencyStatus: comparison.sufficiency.status,

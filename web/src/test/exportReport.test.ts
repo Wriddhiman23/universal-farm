@@ -98,5 +98,38 @@ describe('Export Report Service', () => {
     expect(payload.environmentalEvidence.source).toContain('Published Literature Baselines');
     expect(payload.environmentalEvidence.period).toBeNull();
     expect(payload.environmentalEvidence.annualPrecipitationEstimateMm).toBeNull();
+    expect(payload.environmentalEvidence.periodPrecipitationTotalMm).toBeNull();
+  });
+
+  it('strictly isolates short period rainfall from annual precipitation estimates', () => {
+    const shortWeather: NasaPowerNormalizedPayload = {
+      ...mockWeather,
+      metadata: {
+        ...mockWeather.metadata,
+        requestedStartDate: '2025-01-01',
+        requestedEndDate: '2025-01-07',
+      },
+      records: new Array(7).fill({ dateStr: '20250101', displayDate: '2025-01-01', t2m: 10, t2mMax: 15, t2mMin: 5, prectotcorr: 2 }),
+      summary: {
+        daysTotal: 7,
+        daysWithValidT2M: 7,
+        daysWithValidPrecip: 7,
+        t2mMean: 10,
+        t2mMaxPeak: 15,
+        t2mMinLowest: 5,
+        precipSum: 14.0, // 14 mm in 7 days
+        precipCoveragePercent: 100,
+        isCompleteCoverage: true,
+      },
+    };
+
+    const comparison = executeRotationComparison(mockFarm, shortWeather);
+    const payload = buildExportPayload(comparison, mockFarm, shortWeather);
+
+    // Period total is recorded honestly
+    expect(payload.environmentalEvidence.periodPrecipitationTotalMm).toBe(14.0);
+    // Crucial: annual precipitation MUST be null (never 14.0 mm!)
+    expect(payload.environmentalEvidence.annualPrecipitationEstimateMm).toBeNull();
+    expect(payload.environmentalEvidence.isAnnualObservation).toBe(false);
   });
 });
