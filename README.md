@@ -30,6 +30,14 @@ Universal Farm combines real historical Earth observation data with a determinis
    - Supports single-period seasonal loads (up to 366 days) and chunked multi-year climate summaries (annual precipitation, driest/wettest years, frost days, and heat stress days).
 5. **Decision-Support Report Export**:
    - One-click machine-readable JSON export capturing farm profile inputs, weather observations, rotation evaluations, and advisory disclaimers.
+6. **Farmer-Centered Simple View (4 Large Visual Tools)**:
+   - High-contrast visual interface with touch targets ≥ 48 CSS pixels, large text, and distinct iconography without relying on color alone.
+   - Organised into four large tool cards:
+     - **My Field**: Location status, water availability, and soil texture picture choices with "Not sure" fallbacks.
+     - **What I See**: Visual scouting picture choices strictly bounded as visual notes—never confirmed diagnoses or chemical treatment advice.
+     - **Past Weather**: Real observed NASA POWER daily history bound to field coordinates, explicit units (`°C`, `mm`), satellite coverage disclosure, non-forecast warning, short-period warning, and period rainfall distinction.
+     - **My Crop Plan**: Deterministic feasibility evaluation against Evidence Pack 1, showing feasible next crops, disqualified sequences with agronomic citations, and multi-year alternatives.
+   - Detailed charts, tables, manual coordinates, and citations kept accessible under expandable `<details>` sections.
 
 ---
 
@@ -39,13 +47,14 @@ All automated quality checks have been executed and passed:
 
 | Gate | Command | Actual Result |
 | :--- | :--- | :--- |
-| **Unit & Integration Tests** | `npm run test` | **PASSED** (56 tests passed across 8 test suites in non-watch mode via Vitest) |
-| **Live NASA API Integration** | `src/test/nasaPowerLive.integration.test.ts` | **PASSED** (Real live network call to `power.larc.nasa.gov` verified in 1242ms) |
+| **Unit & Integration Tests** | `npm run test` | **PASSED** (63 tests passed across 9 test suites in non-watch mode via Vitest) |
+| **Live NASA API Integration** | `src/test/nasaPowerLive.integration.test.ts` | **PASSED** (Real live network call to `power.larc.nasa.gov` verified in 1180ms) |
 | **Linting** | `npm run lint` | **PASSED** (0 errors, 0 warnings across all files via ESLint 9 + TypeScript-ESLint) |
-| **Production Build** | `npm run build` | **PASSED** (Vite v6 production bundle built successfully in `web/dist/` in 5.55s) |
+| **Production Build** | `npm run build` | **PASSED** (Vite v6 production bundle built successfully in `web/dist/` in 5.88s) |
 | **Browser Layout Checks** | MCP Browser Tools | **NOT RUN** (Browser DevTools MCP tools not available in this environment; verify manually via browser) |
 
-### Test Suites Breakdown (56 tests total):
+### Test Suites Breakdown (63 tests total):
+- `simpleView.test.ts` (7 tests): Verifies 4 large tool cards (My Field, What I See, Past Weather, My Crop Plan), touch targets >= 48px, "Not sure" options, non-diagnosis observation boundaries, weather safeguards (non-forecast warning, short-period warning, period rainfall distinction), and deterministic crop rotation feasibility.
 - `cropCatalogue.test.ts` (4 tests): Verifies 7 crops, parameter bounds, literature citations, component evidence vs mixture assumptions, and fuzzy name matching.
 - `rotationEngine.test.ts` (17 tests): Verifies sufficiency checks, baseline evaluation without substitution, botanical family repetition warnings, candidate generation, hard constraints (sorghum moisture deficit, pea clay sensitivity), calendar-backed schedule generation across both hemispheres, honest gap reporting for unmapped crops, and deterministic reproducibility.
 - `nasaPowerMultiYear.test.ts` (3 tests): Verifies annual chunk aggregation, driest/wettest year calculation, frost/heat stress counts, and in-memory caching.

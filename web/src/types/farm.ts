@@ -46,6 +46,7 @@ export interface FarmState {
   soilType: SoilType;
   irrigationType: IrrigationType;
   priorities: FarmerPriorities;
+  observations?: string[];
 }
 
 export interface RotationDemonstrationCard {
@@ -77,6 +78,7 @@ export const INITIAL_FARM_STATE: FarmState = {
   soilType: 'unknown',
   irrigationType: 'unknown',
   priorities: { ...INITIAL_FARMER_PRIORITIES },
+  observations: [],
 };
 
 export function validateCoordinates(latStr: string, lonStr: string): CoordinateValidationResult {

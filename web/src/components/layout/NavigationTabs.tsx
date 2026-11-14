@@ -6,11 +6,13 @@ export type TabId = 'my-farm' | 'explorer' | 'evidence';
 interface NavigationTabsProps {
   activeTab: TabId;
   onTabChange: (tab: TabId) => void;
+  onSwitchToSimple?: () => void;
 }
 
 export const NavigationTabs: React.FC<NavigationTabsProps> = ({
   activeTab,
   onTabChange,
+  onSwitchToSimple,
 }) => {
   const tabs = [
     {
@@ -81,6 +83,18 @@ export const NavigationTabs: React.FC<NavigationTabsProps> = ({
               </button>
             );
           })}
+
+          {onSwitchToSimple && (
+            <div className="ml-auto flex items-center pl-2">
+              <button
+                type="button"
+                onClick={onSwitchToSimple}
+                className="flex items-center gap-2 px-4 py-2.5 min-h-[48px] rounded-xl text-sm sm:text-base font-bold bg-forest-800 hover:bg-forest-900 text-white border-2 border-forest-950 transition-colors whitespace-nowrap shadow-xs focus-visible:ring-2 focus-visible:ring-forest-700 focus-visible:outline-none"
+              >
+                <span>🌾 Simple View</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </nav>
