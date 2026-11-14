@@ -69,6 +69,21 @@ All automated quality checks have been executed and passed:
 
 ---
 
+## Deployment & Continuous Delivery
+
+Universal Farm is continuously deployed to Netlify directly from the public GitHub repository:
+
+- **Public GitHub Repository**: [https://github.com/Wriddhiman23/universal-farm](https://github.com/Wriddhiman23/universal-farm)
+- **Production URL**: [https://flame-in-freefall.netlify.app](https://flame-in-freefall.netlify.app)
+- **Production Branch**: `main`
+- **Build Pipeline**: Netlify GitHub App continuous integration
+  - Base directory: `web`
+  - Build command: `npm run build`
+  - Publish directory: `dist` (relative to `web`)
+  - SPA Routing: Configured via root `netlify.toml` with 200 rewrite for client-side routing
+
+---
+
 ## Directory & File Structure
 
 ```text
